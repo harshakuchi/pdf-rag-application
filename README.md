@@ -1,189 +1,368 @@
 # 📄 PDF RAG Application
 
-An AI-powered **Retrieval-Augmented Generation (RAG)** application that allows users to upload PDF documents and ask questions based solely on their contents.
+An AI-powered **Retrieval-Augmented Generation (RAG)** application that allows users to upload PDF documents and ask questions based entirely on the uploaded document's content.
 
-The application extracts text from PDFs, converts them into vector embeddings using **Voyage AI**, stores them in **Qdrant Vector Database**, retrieves the most relevant chunks using semantic search, and generates grounded answers using **Groq LLMs** through **LlamaIndex**. The backend APIs are built with **FastAPI**, orchestrated using **Inngest**, and the user interface is developed with **Streamlit**.
+The application extracts and chunks PDF text using **LlamaIndex**, generates semantic embeddings using **Voyage AI**, stores vectors in **Qdrant**, retrieves relevant document chunks through semantic similarity search, and generates context-aware answers using **Groq's GPT-OSS-120B** model.
+
+The backend is built with **FastAPI**, while **Inngest** is used to orchestrate event-driven workflows, execution logs, retries, throttling, and rate limiting. The frontend is built using **Streamlit**.
 
 ---
 
-## Project Architecture
+## Features
+
+* Upload PDF documents for indexing
+* Parse and chunk PDFs using LlamaIndex
+* Generate semantic embeddings using Voyage AI
+* Store embeddings in Qdrant Vector Database
+* Retrieve relevant document chunks using vector similarity search
+* Generate context-aware answers using Groq GPT-OSS-120B
+* Ground LLM responses using retrieved document context
+* Event-driven backend powered by Inngest
+* Automatic workflow retries
+* Workflow execution logs through Inngest Dev Server
+* Throttling and rate limiting for PDF ingestion
+* Local persistent Qdrant storage
+
+---
+
+# Architecture
 
 ```text
-                    User
-                      │
-                      ▼
-              Streamlit Frontend
-                      │
-          HTTP Requests (REST APIs)
-                      │
-                      ▼
-                FastAPI Backend
-                      │
-          ┌───────────┴────────────┐
-          │                        │
-          ▼                        ▼
-   PDF Ingestion API         Query API
-          │                        │
-          ▼                        ▼
-     LlamaIndex Parser       Retrieve Context
-          │                        │
-          ▼                        ▼
- Voyage AI Embeddings      Qdrant Vector Search
-          │                        │
-          └───────────┬────────────┘
-                      ▼
-               Groq LLM Generation
-                      │
-                      ▼
-              Response to User
+                           ┌──────────────┐
+                           │     User     │
+                           └──────┬───────┘
+                                  │
+                                  ▼
+                         ┌─────────────────┐
+                         │    Streamlit    │
+                         │    Frontend     │
+                         └────────┬────────┘
+                                  │
+                             HTTP Request
+                                  │
+                                  ▼
+                         ┌─────────────────┐
+                         │     FastAPI     │
+                         │   + Inngest     │
+                         └────────┬────────┘
+                                  │
+                  ┌───────────────┴───────────────┐
+                  │                               │
+                  ▼                               ▼
+        ┌──────────────────┐            ┌──────────────────┐
+        │ rag/ingest_pdf   │            │ rag/query_pdf_ai │
+        └────────┬─────────┘            └────────┬─────────┘
+                 │                               │
+                 ▼                               ▼
+        ┌──────────────────┐            ┌──────────────────┐
+        │ Load & Chunk PDF │            │ Embed Question   │
+        │   LlamaIndex     │            │    Voyage AI     │
+        └────────┬─────────┘            └────────┬─────────┘
+                 │                               │
+                 ▼                               ▼
+        ┌──────────────────┐            ┌──────────────────┐
+        │ Voyage AI        │            │ Qdrant           │
+        │ Embeddings       │            │ Vector Search    │
+        └────────┬─────────┘            └────────┬─────────┘
+                 │                               │
+                 ▼                               ▼
+        ┌──────────────────┐            ┌──────────────────┐
+        │ Qdrant           │            │ Retrieve Top-K   │
+        │ Vector Database  │            │ Context Chunks   │
+        └────────┬─────────┘            └────────┬─────────┘
+                 │                               │
+                 └───────────────┬───────────────┘
+                                 │
+                                 ▼
+                         ┌─────────────────┐
+                         │ Groq GPT-OSS    │
+                         │     120B        │
+                         └────────┬────────┘
+                                  │
+                                  ▼
+                         ┌─────────────────┐
+                         │  Grounded      │
+                         │    Answer      │
+                         └─────────────────┘
 ```
 
 ---
 
-#  How RAG Works in this Project
+# RAG Workflow
 
-This application follows a complete **Retrieval-Augmented Generation pipeline**.
+## 1. PDF Upload & Ingestion
 
-### Step 1 — Upload PDF
+When a user uploads a PDF:
 
-The user uploads a PDF through the Streamlit interface.
+1. Streamlit accepts the uploaded PDF.
+2. An Inngest event `rag/ingest_pdf` is triggered.
+3. LlamaIndex parses the PDF.
+4. The extracted text is divided into smaller chunks.
+5. Voyage AI generates embeddings for each chunk.
+6. The embeddings and metadata are stored in Qdrant.
 
-### Step 2 — Parse PDF
-
-LlamaIndex reads and extracts text from the PDF while preserving document structure.
-
-### Step 3 — Chunking
-
-The extracted text is divided into smaller chunks so relevant information can be retrieved efficiently.
-
-### Step 4 — Embedding Generation
-
-Each chunk is converted into a high-dimensional vector using **Voyage AI Embedding Model**.
-
-### Step 5 — Store in Qdrant
-
-Embeddings along with metadata are stored inside **Qdrant**, which acts as the vector database.
-
-### Step 6 — Ask a Question
-
-The user asks a natural language question.
-
-### Step 7 — Semantic Retrieval
-
-The question is embedded using Voyage AI and Qdrant retrieves the most similar document chunks.
-
-### Step 8 — LLM Response
-
-The retrieved chunks are passed as context to a **Groq-hosted LLM** which generates an answer grounded in the uploaded document.
+```text
+PDF
+ │
+ ▼
+LlamaIndex
+ │
+ ▼
+Text Extraction
+ │
+ ▼
+Chunking
+ │
+ ▼
+Voyage AI Embeddings
+ │
+ ▼
+Qdrant
+```
 
 ---
 
-## Tech Stack
+## 2. Question Answering
 
-| Category               | Technology          |
-| ---------------------- | ------------------- |
-| Frontend               | Streamlit           |
-| Backend                | FastAPI             |
-| API Orchestration      | Inngest             |
-| PDF Parsing            | LlamaIndex          |
-| Embeddings             | Voyage AI           |
-| LLM                    | Groq (Llama Models) |
-| Vector Database        | Qdrant              |
-| Environment Management | UV + Python 3.12    |
+When a user asks a question:
+
+1. Streamlit sends the question to the backend.
+2. The `rag/query_pdf_ai` Inngest event is triggered.
+3. Voyage AI converts the question into an embedding.
+4. Qdrant performs semantic similarity search.
+5. The Top-K relevant chunks are retrieved.
+6. The retrieved chunks are combined into a context block.
+7. Groq GPT-OSS-120B receives the context and question.
+8. The model generates an answer grounded in the retrieved information.
+
+```text
+User Question
+      │
+      ▼
+Voyage AI Embedding
+      │
+      ▼
+Qdrant Similarity Search
+      │
+      ▼
+Top-K Relevant Chunks
+      │
+      ▼
+Context + Question
+      │
+      ▼
+Groq GPT-OSS-120B
+      │
+      ▼
+Final Answer
+```
 
 ---
 
-## Project Structure
+# Tech Stack
+
+| Category        | Technology        |
+| --------------- | ----------------- |
+| Frontend        | Streamlit         |
+| Backend         | FastAPI           |
+| Workflow Engine | Inngest           |
+| PDF Parsing     | LlamaIndex        |
+| Embeddings      | Voyage AI         |
+| LLM             | Groq GPT-OSS-120B |
+| Vector Database | Qdrant            |
+| Language        | Python 3.12       |
+| Package Manager | UV                |
+| API Server      | Uvicorn           |
+| Configuration   | python-dotenv     |
+| Data Validation | Pydantic          |
+
+---
+
+# Project Structure
 
 ```text
 pdf-rag-application/
 │
-├── uploads/                 # Uploaded PDF files
-├── qdrant_storage/          # Local Qdrant vector storage
-├── .venv/                   # Virtual environment
+├── uploads/                 # Uploaded PDF documents
+├── qdrant_storage/          # Local Qdrant database storage
+├── .venv/                   # Python virtual environment
 │
-├── main.py                  # FastAPI application
+├── main.py                  # FastAPI application + Inngest workflows
 ├── streamlit_app.py         # Streamlit frontend
-├── data_loader.py           # PDF loading & chunking
-├── vector_db.py             # Qdrant operations
-├── custom_types.py          # Shared request/response models
-├── reset_qdrant.py          # Utility to clear vector database
+├── data_loader.py           # PDF parsing, chunking & embeddings
+├── vector_db.py             # Qdrant search and upsert operations
+├── custom_types.py          # Pydantic request/response models
+├── reset_qdrant.py          # Reset Qdrant collection
 │
-├── .env.example             # Environment variables template
-├── pyproject.toml           # Project dependencies
-├── uv.lock                  # UV lock file
-└── README.md
+├── .env.example             # Environment variable template
+├── pyproject.toml            # Project configuration & dependencies
+├── uv.lock                   # Locked dependencies
+└── README.md                 # Project documentation
 ```
 
 ---
 
 # API Endpoints
 
-The backend exposes two primary endpoints.
+FastAPI hosts the application, while the actual business logic is executed through **Inngest event functions**.
 
-## 1. Upload & Index PDF
+## Ingest PDF
 
-**Endpoint**
+### Endpoint
 
 ```http
 POST /rag/ingest_pdf
 ```
 
-Uploads a PDF, parses it using LlamaIndex, generates embeddings, and stores vectors inside Qdrant.
+### Triggered Event
 
-### Request
+```text
+rag/ingest_pdf
+```
+
+### Purpose
+
+Indexes a PDF document into the Qdrant vector database.
+
+### Request Body
 
 ```json
 {
   "data": {
-      "pdf_path": "path"
+    "pdf_path": "uploads/robotics_notes.pdf"
   }
+}
+```
+
+### Processing Steps
+
+| Inngest Step       | Description                                                        |
+| ------------------ | ------------------------------------------------------------------ |
+| `load-and-chunk`   | Loads the PDF and splits the document into chunks using LlamaIndex |
+| `embed-and-upsert` | Generates Voyage AI embeddings and stores them in Qdrant           |
+
+### Example Response
+
+```json
+{
+  "ingested": 84
 }
 ```
 
 ---
 
-## 2. Ask Questions from PDF
+# Query PDF
 
-**Endpoint**
+### Endpoint
 
 ```http
 POST /rag/query_pdf_ai
 ```
 
-Accepts a user query, retrieves relevant document chunks, and returns an AI-generated answer.
+### Triggered Event
 
-### Request
+```text
+rag/query_pdf_ai
+```
+
+### Purpose
+
+Answers questions using information retrieved from indexed PDF documents.
+
+### Request Body
 
 ```json
 {
   "data": {
-      "question": "question"
+    "question": "Explain hydraulic actuating systems.",
+    "top_k": 5
   }
+}
+```
+
+### Processing Steps
+
+| Inngest Step       | Description                                                        |
+| ------------------ | ------------------------------------------------------------------ |
+| `embed-and-search` | Embeds the question and retrieves Top-K similar chunks from Qdrant |
+| `llm-answer`       | Generates the final answer using Groq GPT-OSS-120B                 |
+
+### Example Response
+
+```json
+{
+  "answer": "Hydraulic actuating systems use pressurized fluid to generate motion...",
+  "sources": [
+    "robotics_notes.pdf"
+  ],
+  "num_contexts": 5
 }
 ```
 
 ---
 
-# Why Inngest?
+# AI Models
 
-This project uses **Inngest** during local development to orchestrate API workflows.
+## Voyage AI — Embeddings
 
-### Benefits
+Voyage AI is used to generate dense vector embeddings for:
 
-* Event-driven execution.
-* Tracks every endpoint execution.
-* Provides detailed logs for debugging.
-* Makes long-running ingestion workflows easier to monitor.
-* Simplifies asynchronous processing.
+* PDF document chunks
+* User questions
 
-For every API invocation, Inngest records execution status, timing, and logs.
+The embeddings allow the system to compare the semantic meaning of the question with the semantic meaning of document chunks.
+
+```text
+PDF Chunk ──────► Embedding Vector
+                       │
+                       ▼
+                    Qdrant
+
+
+User Question ──► Embedding Vector
+                       │
+                       ▼
+                 Similarity Search
+```
 
 ---
 
-# Installation
+## Groq GPT-OSS-120B — Generation
 
-## 1. Clone Repository
+Groq's **GPT-OSS-120B** is used for the final answer generation.
+
+The model receives:
+
+```text
+Retrieved Context
+       +
+User Question
+       │
+       ▼
+GPT-OSS-120B
+       │
+       ▼
+Grounded Answer
+```
+
+A system prompt instructs the model to answer using the provided context, helping reduce hallucinations and keep responses grounded in the uploaded documents.
+
+---
+
+# Environment Variables
+
+Create a `.env` file in the project root.
+
+```env
+VOYAGE_API_KEY=your_voyage_api_key
+GROQ_API_KEY=your_groq_api_key
+```
+
+---
+
+# Installation & Setup
+
+## 1. Clone the Repository
 
 ```bash
 git clone https://github.com/harshakuchi/pdf-rag-application.git
@@ -191,23 +370,27 @@ git clone https://github.com/harshakuchi/pdf-rag-application.git
 cd pdf-rag-application
 ```
 
+---
+
 ## 2. Install Dependencies
 
-Using **uv**
+This project uses **UV** for Python dependency management.
 
 ```bash
 uv sync
 ```
 
-Activate virtual environment.
+---
 
-**Windows**
+## 3. Activate the Virtual Environment
 
-```bash
+### Windows
+
+```powershell
 .venv\Scripts\activate
 ```
 
-**Linux / macOS**
+### Linux / macOS
 
 ```bash
 source .venv/bin/activate
@@ -215,66 +398,162 @@ source .venv/bin/activate
 
 ---
 
-## 3. Configure Environment Variables
+## 4. Configure Environment Variables
 
-Create a `.env` file.
+Create a `.env` file:
 
 ```env
 VOYAGE_API_KEY=your_voyage_api_key
-
 GROQ_API_KEY=your_groq_api_key
 ```
 
 ---
 
-## 4. Start Qdrant
+## 5. Start Qdrant
 
-Using Docker
+Run Qdrant locally using Docker:
 
 ```bash
 docker run -p 6333:6333 qdrant/qdrant
 ```
 
+Qdrant will be available at:
+
+```text
+http://localhost:6333
+```
+
 ---
 
-## 5. Start Inngest Dev Server (Prerequisite: Node.js)
+## 6. Start Inngest Development Server
+
+Run:
 
 ```bash
 npx inngest-cli@latest dev
 ```
 
-The development dashboard will show endpoint executions and logs.
+The Inngest development dashboard will be available at:
 
----
-
-## 6. Run FastAPI Backend
-
-```bash
-uv run uvicorn main:app
+```text
+http://localhost:8288
 ```
 
 ---
 
-## 7. Run Streamlit Frontend
+## 7. Start the FastAPI Backend
 
 ```bash
-uv run streamlit run .\streamlit_app.py
+uv run uvicorn main:app --reload
+```
+
+Backend:
+
+```text
+http://localhost:8000
+```
+
+FastAPI documentation:
+
+```text
+http://localhost:8000/docs
+```
+
+---
+
+## 8. Start the Streamlit Frontend
+
+Open another terminal and run:
+
+```bash
+uv run streamlit run streamlit_app.py
+```
+
+Frontend:
+
+```text
+http://localhost:8501
+```
+
+---
+
+# Complete Request Flow
+
+The complete application flow can be summarized as:
+
+```text
+                         PDF INGESTION
+                              │
+                              ▼
+                        Streamlit Upload
+                              │
+                              ▼
+                      FastAPI / Inngest
+                              │
+                              ▼
+                         Parse PDF
+                              │
+                              ▼
+                          Chunk Text
+                              │
+                              ▼
+                     Voyage AI Embedding
+                              │
+                              ▼
+                           Qdrant
+                              │
+                              │
+                              ▼
+                       Indexed Document
+
+
+                         QUESTION ANSWERING
+                              │
+                              ▼
+                       User Question
+                              │
+                              ▼
+                      Voyage AI Embedding
+                              │
+                              ▼
+                   Qdrant Similarity Search
+                              │
+                              ▼
+                       Top-K Chunks
+                              │
+                              ▼
+                     Context + Question
+                              │
+                              ▼
+                       Groq GPT-OSS-120B
+                              │
+                              ▼
+                         Final Answer
 ```
 
 ---
 
 # Dependencies
 
-Major libraries used in this project include:
+The major dependencies used by the project include:
 
 ```text
 fastapi
 streamlit
+inngest
 llama-index
 qdrant-client
 voyageai
 groq
-inngest
 uvicorn
 python-dotenv
+pydantic
 ```
+
+Install everything using:
+
+```bash
+uv sync
+```
+
+---
